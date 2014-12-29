@@ -1140,14 +1140,16 @@ int http_request_parse(server *srv, connection *con) {
 	/* check if we have read post data */
 	if (con_length_set) {
 		/* don't handle more the SSIZE_MAX bytes in content-length */
-		if (con->request.content_length > SSIZE_MAX) {
-			con->http_status = 413;
-			con->keep_alive = 0;
+#if 0
+        if (con->request.content_length > SSIZE_MAX) {
+            con->http_status = 413;
+            con->keep_alive = 0;
 
-			log_error_write(srv, __FILE__, __LINE__, "sos",
-					"request-size too long:", (off_t) con->request.content_length, "-> 413");
-			return 0;
-		}
+            log_error_write(srv, __FILE__, __LINE__, "sos",
+                    "request-size too long:", (off_t) con->request.content_length, "-> 413");
+            return 0;
+        }
+#endif
 
 		/* divide by 1024 as srvconf.max_request_size is in kBytes */
 		if (srv->srvconf.max_request_size != 0 &&

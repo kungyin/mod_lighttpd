@@ -829,7 +829,7 @@ static handler_t proxy_write_request(server *srv, handler_ctx *hctx) {
 	case PROXY_STATE_WRITE:;
 		ret = srv->network_backend_write(srv, con, hctx->fd, hctx->wb, MAX_WRITE_LIMIT);
 
-		chunkqueue_remove_finished_chunks(hctx->wb);
+		chunkqueue_remove_finished_chunks(hctx->wb, 1);
 
 		if (-1 == ret) { /* error on our side */
 			log_error_write(srv, __FILE__, __LINE__, "ssd", "write failed:", strerror(errno), errno);

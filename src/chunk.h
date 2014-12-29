@@ -59,7 +59,7 @@ buffer * chunkqueue_get_append_buffer(chunkqueue *c);
 buffer * chunkqueue_get_prepend_buffer(chunkqueue *c);
 chunk * chunkqueue_get_append_tempfile(chunkqueue *cq);
 
-int chunkqueue_remove_finished_chunks(chunkqueue *cq);
+int chunkqueue_remove_finished_chunks(chunkqueue *cq, int need_remove);
 
 off_t chunkqueue_length(chunkqueue *c);
 off_t chunkqueue_written(chunkqueue *c);

@@ -1146,7 +1146,7 @@ static int cgi_create_env(server *srv, connection *con, plugin_data *p, buffer *
 					con->http_status = 500;
 					break;
 				}
-				chunkqueue_remove_finished_chunks(cq);
+				chunkqueue_remove_finished_chunks(cq, 1);
 			}
 		}
 

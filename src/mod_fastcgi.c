@@ -2143,7 +2143,7 @@ static int fcgi_create_env(server *srv, handler_ctx *hctx, size_t request_id) {
 						c->file.is_temp = 1;
 						req_c->file.is_temp = 0;
 
-						chunkqueue_remove_finished_chunks(req_cq);
+						chunkqueue_remove_finished_chunks(req_cq, 1);
 
 						req_c = req_cq->first;
 					}
@@ -2164,7 +2164,7 @@ static int fcgi_create_env(server *srv, handler_ctx *hctx, size_t request_id) {
 					hctx->wb->bytes_in += weHave;
 
 					if (req_c->offset == (off_t) req_c->mem->used - 1) {
-						chunkqueue_remove_finished_chunks(req_cq);
+						chunkqueue_remove_finished_chunks(req_cq, 1);
 
 						req_c = req_cq->first;
 					}
@@ -2499,7 +2499,7 @@ static int fastcgi_get_packet(server *srv, handler_ctx *hctx, fastcgi_response_p
 		}
 	}
 
-	chunkqueue_remove_finished_chunks(hctx->rb);
+	chunkqueue_remove_finished_chunks(hctx->rb, 1);
 
 	return 0;
 }
@@ -3073,7 +3073,7 @@ static handler_t fcgi_write_request(server *srv, handler_ctx *hctx) {
 	case FCGI_STATE_WRITE:
 		ret = srv->network_backend_write(srv, con, hctx->fd, hctx->wb, MAX_WRITE_LIMIT);
 
-		chunkqueue_remove_finished_chunks(hctx->wb);
+		chunkqueue_remove_finished_chunks(hctx->wb, 1);
 
 		if (ret < 0) {
 			switch(errno) {

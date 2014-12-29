@@ -1061,7 +1061,7 @@ found_header_end:
 				    dst_cq->last->offset == 0) {
 					/* ok, take the last chunk for our job */
 
-			 		if (dst_cq->last->file.length < 1 * 1024 * 1024) {
+//			 		if (dst_cq->last->file.length < 1 * 1024 * 1024) {
 						dst_c = dst_cq->last;
 
 						if (dst_c->file.fd == -1) {
@@ -1069,16 +1069,16 @@ found_header_end:
 							dst_c->file.fd = open(dst_c->file.name->ptr, O_WRONLY | O_APPEND);
 							fd_close_on_exec(dst_c->file.fd);
 						}
-					} else {
-						/* the chunk is too large now, close it */
-						dst_c = dst_cq->last;
-
-						if (dst_c->file.fd != -1) {
-							close(dst_c->file.fd);
-							dst_c->file.fd = -1;
-						}
-						dst_c = chunkqueue_get_append_tempfile(dst_cq);
-					}
+//					} else {
+//						/* the chunk is too large now, close it */
+//						dst_c = dst_cq->last;
+//
+//						if (dst_c->file.fd != -1) {
+//							close(dst_c->file.fd);
+//							dst_c->file.fd = -1;
+//						}
+//						dst_c = chunkqueue_get_append_tempfile(dst_cq);
+//					}
 				} else {
 					dst_c = chunkqueue_get_append_tempfile(dst_cq);
 				}
@@ -1159,8 +1159,8 @@ found_header_end:
 		connection_set_state(srv, con, CON_STATE_ERROR);
 	}
 
-	chunkqueue_remove_finished_chunks(cq);
-
+	chunkqueue_remove_finished_chunks(cq, 1);
+	
 	return 0;
 }
 

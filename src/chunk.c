@@ -54,12 +54,12 @@ static void chunk_free(chunk *c) {
 	free(c);
 }
 
-static void chunk_reset(chunk *c) {
+static void chunk_reset(chunk *c, int need_remove) {
 	if (!c) return;
 
 	buffer_reset(c->mem);
 
-	if (c->file.is_temp && !buffer_is_empty(c->file.name)) {
+	if (c->file.is_temp && !buffer_is_empty(c->file.name) && need_remove == 1) {
 		unlink(c->file.name->ptr);
 	}
 
@@ -155,7 +155,7 @@ void chunkqueue_reset(chunkqueue *cq) {
 		}
 	}
 
-	chunkqueue_remove_finished_chunks(cq);
+	chunkqueue_remove_finished_chunks(cq, 1);
 	cq->bytes_in = 0;
 	cq->bytes_out = 0;
 }
@@ -362,7 +362,7 @@ int chunkqueue_is_empty(chunkqueue *cq) {
 	return cq->first ? 0 : 1;
 }
 
-int chunkqueue_remove_finished_chunks(chunkqueue *cq) {
+int chunkqueue_remove_finished_chunks(chunkqueue *cq, int need_remove) {
 	chunk *c;
 
 	for (c = cq->first; c; c = cq->first) {
@@ -379,9 +379,9 @@ int chunkqueue_remove_finished_chunks(chunkqueue *cq) {
 			break;
 		}
 
-		if (!is_finished) break;
+		if (!is_finished && need_remove) break;
 
-		chunk_reset(c);
+		chunk_reset(c, need_remove);
 
 		cq->first = c->next;
 		if (c == cq->last) cq->last = NULL;

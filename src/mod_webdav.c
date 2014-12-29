@@ -23,13 +23,13 @@
 #include <unistd.h>
 #include <dirent.h>
 
-#if defined(HAVE_LIBXML_H) && defined(HAVE_SQLITE3_H)
+//#if defined(HAVE_LIBXML_H) && defined(HAVE_SQLITE3_H)
 #define USE_PROPPATCH
 #include <libxml/tree.h>
 #include <libxml/parser.h>
 
 #include <sqlite3.h>
-#endif
+//#endif
 
 #if defined(HAVE_LIBXML_H) && defined(HAVE_SQLITE3_H) && defined(HAVE_UUID_UUID_H)
 #define USE_LOCKS
@@ -1065,7 +1065,7 @@ static int webdav_parse_chunkqueue(server *srv, connection *con, plugin_data *p,
 		case UNUSED_CHUNK:
 			break;
 		}
-		chunkqueue_remove_finished_chunks(cq);
+		chunkqueue_remove_finished_chunks(cq, 1);
 	}
 
 
@@ -1231,6 +1231,8 @@ URIHANDLER_FUNC(mod_webdav_subrequest_handler) {
 		depth = strtol(ds->value->ptr, NULL, 10);
 	}
 
+	log_error_write(srv, __FILE__, __LINE__,  "sd",  "mod_webdav method ", con->request.http_method);
+
 	switch (con->request.http_method) {
 	case HTTP_METHOD_PROPFIND:
 		/* they want to know the properties of the directory */
@@ -1354,6 +1356,8 @@ URIHANDLER_FUNC(mod_webdav_subrequest_handler) {
 		prop_200 = buffer_init();
 		prop_404 = buffer_init();
 
+		log_error_write(srv, __FILE__, __LINE__,  "sd",
+				"mod_webdav: depth: ", depth);
 		switch(depth) {
 		case 0:
 			/* Depth: 0 */
@@ -1708,6 +1712,9 @@ URIHANDLER_FUNC(mod_webdav_subrequest_handler) {
 
 		for (c = cq->first; c; c = cq->first) {
 			int r = 0;
+			log_error_write(srv, __FILE__, __LINE__, "sd", "mod_webdav c_type: ", c->type );
+
+			int need_remove_file = 1;
 
 			/* copy all chunks */
 			switch(c->type) {
@@ -1738,17 +1745,23 @@ URIHANDLER_FUNC(mod_webdav_subrequest_handler) {
 					/* chunk_reset() or chunk_free() will cleanup for us */
 				}
 
-				if ((r = write(fd, c->file.mmap.start + c->offset, c->file.length - c->offset)) < 0) {
-					switch(errno) {
-					case ENOSPC:
-						con->http_status = 507;
+//				if ((r = write(fd, c->file.mmap.start + c->offset, c->file.length - c->offset)) < 0) {
+//					switch(errno) {
+//					case ENOSPC:
+//						con->http_status = 507;
+//
+//						break;
+//					default:
+//						con->http_status = 403;
+//						break;
+//					}
+//				}
 
-						break;
-					default:
-						con->http_status = 403;
-						break;
-					}
-				}
+				if(fd != -1)
+					close(fd);
+				fd = -1;
+				need_remove_file = 0;
+
 				break;
 			case MEM_CHUNK:
 				if ((r = write(fd, c->mem->ptr + c->offset, c->mem->used - c->offset - 1)) < 0) {
@@ -1767,15 +1780,30 @@ URIHANDLER_FUNC(mod_webdav_subrequest_handler) {
 				break;
 			}
 
-			if (r > 0) {
-				c->offset += r;
-				cq->bytes_out += r;
-			} else {
-				break;
+			if(need_remove_file == 1) {
+				if (r > 0) {
+					c->offset += r;
+					cq->bytes_out += r;
+				} else {
+					break;
+				}
 			}
-			chunkqueue_remove_finished_chunks(cq);
+
+			log_error_write(srv, __FILE__, __LINE__, "sd",
+				"mod_webdav: ", need_remove_file);
+			buffer *name = buffer_init_buffer(c->file.name);
+			chunkqueue_remove_finished_chunks(cq, need_remove_file);
+
+			log_error_write(srv, __FILE__, __LINE__, "sbb",
+				"mod_webdav - rename: ", name, con->physical.path);
+
+			if(need_remove_file == 0) 
+				rename(name->ptr, con->physical.path->ptr);
+
+			buffer_free(name);
 		}
-		close(fd);
+		if(fd != -1)
+			close(fd);
 
 		return HANDLER_FINISHED;
 	}

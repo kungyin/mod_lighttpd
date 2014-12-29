@@ -1090,7 +1090,7 @@ int network_write_chunkqueue(server *srv, connection *con, chunkqueue *cq, off_t
 	}
 
 	if (ret >= 0) {
-		chunkqueue_remove_finished_chunks(cq);
+		chunkqueue_remove_finished_chunks(cq, 1);
 		ret = chunkqueue_is_empty(cq) ? 0 : 1;
 	}
 
