@@ -660,14 +660,27 @@ static int webdav_delete_dir(server *srv, connection *con, plugin_data *p, physi
 }
 
 static int webdav_copy_file(server *srv, connection *con, plugin_data *p, physical *src, physical *dst, int overwrite) {
-	stream s;
 	int status = 0, ofd;
 	UNUSED(srv);
 	UNUSED(con);
 
-	if (stream_open(&s, src->path)) {
-		return 403;
+	stream s;
+	int usemmap = 1;
+
+#ifdef HAVE_MMAP
+	struct stat st;
+	if (-1 == stat64(src->path->ptr, &st)) {
+		return -1;
 	}
+
+	if(st.st_size < 0 || st.st_size >= SSIZE_MAX)
+		usemmap = 0;
+#endif
+
+	if(usemmap)
+		if (stream_open(&s, src->path)) {
+			return 403;
+		}
 
 	if (-1 == (ofd = open(dst->path->ptr, O_WRONLY|O_TRUNC|O_CREAT|(overwrite ? 0 : O_EXCL), WEBDAV_FILE_MODE))) {
 		/* opening the destination failed for some reason */
@@ -686,11 +699,37 @@ static int webdav_copy_file(server *srv, connection *con, plugin_data *p, physic
 			status = 403;
 			break;
 		}
-		stream_close(&s);
+		if(usemmap)
+			stream_close(&s);
 		return status;
 	}
 
-	if (-1 == write(ofd, s.start, s.size)) {
+	int result = 0;
+	if(usemmap) {
+		if (-1 == write(ofd,  s.start, s.size)) {
+			result = -1;
+		}
+		stream_close(&s);
+	}
+	else {
+		char buf[8192];
+		int infd;
+		if (-1 == (infd = open(src->path->ptr, O_RDONLY | O_BINARY))) {
+			return -1;
+		}
+		ssize_t fileread = 0;
+		while ((fileread = read(infd, buf, sizeof(buf))) > 0) {
+			if (-1 == write(ofd, buf, fileread)) {
+				result = -1;
+				break;
+			}
+		}
+		close(infd);
+	}
+	close(ofd);
+
+	if(result == -1)
+	{
 		switch(errno) {
 		case ENOSPC:
 			status = 507;
@@ -700,9 +739,6 @@ static int webdav_copy_file(server *srv, connection *con, plugin_data *p, physic
 			break;
 		}
 	}
-
-	stream_close(&s);
-	close(ofd);
 
 #ifdef USE_PROPPATCH
 	if (0 == status) {
@@ -1720,30 +1756,30 @@ URIHANDLER_FUNC(mod_webdav_subrequest_handler) {
 			switch(c->type) {
 			case FILE_CHUNK:
 
-				if (c->file.mmap.start == MAP_FAILED) {
-					if (-1 == c->file.fd &&  /* open the file if not already open */
-					    -1 == (c->file.fd = open(c->file.name->ptr, O_RDONLY))) {
-						log_error_write(srv, __FILE__, __LINE__, "ss", "open failed: ", strerror(errno));
-						close(fd);
-						return HANDLER_ERROR;
-					}
-
-					if (MAP_FAILED == (c->file.mmap.start = mmap(NULL, c->file.length, PROT_READ, MAP_SHARED, c->file.fd, 0))) {
-						log_error_write(srv, __FILE__, __LINE__, "ssbd", "mmap failed: ",
-								strerror(errno), c->file.name,  c->file.fd);
-						close(c->file.fd);
-						c->file.fd = -1;
-						close(fd);
-						return HANDLER_ERROR;
-					}
-
-					c->file.mmap.length = c->file.length;
-
-					close(c->file.fd);
-					c->file.fd = -1;
-
-					/* chunk_reset() or chunk_free() will cleanup for us */
-				}
+//				if (c->file.mmap.start == MAP_FAILED) {
+//					if (-1 == c->file.fd &&  /* open the file if not already open */
+//					    -1 == (c->file.fd = open(c->file.name->ptr, O_RDONLY))) {
+//						log_error_write(srv, __FILE__, __LINE__, "ss", "open failed: ", strerror(errno));
+//						close(fd);
+//						return HANDLER_ERROR;
+//					}
+//
+//					if (MAP_FAILED == (c->file.mmap.start = mmap(NULL, c->file.length, PROT_READ, MAP_SHARED, c->file.fd, 0))) {
+//						log_error_write(srv, __FILE__, __LINE__, "ssbd", "mmap failed: ",
+//								strerror(errno), c->file.name,  c->file.fd);
+//						close(c->file.fd);
+//						c->file.fd = -1;
+//						close(fd);
+//						return HANDLER_ERROR;
+//					}
+//
+//					c->file.mmap.length = c->file.length;
+//
+//					close(c->file.fd);
+//					c->file.fd = -1;
+//
+//					/* chunk_reset() or chunk_free() will cleanup for us */
+//				}
 
 //				if ((r = write(fd, c->file.mmap.start + c->offset, c->file.length - c->offset)) < 0) {
 //					switch(errno) {
@@ -1791,16 +1827,26 @@ URIHANDLER_FUNC(mod_webdav_subrequest_handler) {
 
 			log_error_write(srv, __FILE__, __LINE__, "sd",
 				"mod_webdav: ", need_remove_file);
-			buffer *name = buffer_init_buffer(c->file.name);
+
+			physical src;
+			src.path = buffer_init_buffer(c->file.name);
 			chunkqueue_remove_finished_chunks(cq, need_remove_file);
 
-			log_error_write(srv, __FILE__, __LINE__, "sbb",
-				"mod_webdav - rename: ", name, con->physical.path);
+			if(need_remove_file == 0) {
+				if(0 != rename(src.path->ptr, con->physical.path->ptr)) {
+					if (0 != (r = webdav_copy_file(srv, con, p, &src, &(con->physical), 1))) {
+						con->http_status = r;
+					}
 
-			if(need_remove_file == 0) 
-				rename(name->ptr, con->physical.path->ptr);
-
-			buffer_free(name);
+					b = buffer_init();
+					webdav_delete_file(srv, con, p, &src, b);
+					buffer_free(b);
+				}
+				else
+					log_error_write(srv, __FILE__, __LINE__, "sbsb",
+						"mod_webdav - rename: ", src.path, " -> ", con->physical.path);
+			}
+			buffer_free(src.path);
 		}
 		if(fd != -1)
 			close(fd);
@@ -2053,9 +2099,9 @@ URIHANDLER_FUNC(mod_webdav_subrequest_handler) {
 				/* rename failed, fall back to COPY + DELETE */
 			}
 
+			//link(con->physical.path->ptr, p->physical.path->ptr);
 			if (0 != (r = webdav_copy_file(srv, con, p, &(con->physical), &(p->physical), overwrite))) {
 				con->http_status = r;
-
 				return HANDLER_FINISHED;
 			}
 
